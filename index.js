@@ -23,6 +23,8 @@ const client = new Client({
 client.on('qr', (qr) => {
     console.log('📱 Escanea este QR con WhatsApp Business:');
     qrcode.generate(qr, { small: true });
+    console.log("🔗 O abre este enlace para ver el QR como imagen:");
+    console.log("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
 });
 
 client.on('ready', () => {
