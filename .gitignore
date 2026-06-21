@@ -1,0 +1,14 @@
+# Dependencias
+node_modules/
+
+# Sesión y caché de WhatsApp Web (se regeneran / se guardan en el volumen de Railway)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Logs y temporales
+*.log
+npm-debug.log*
+.DS_Store
+
+# Variables de entorno
+.env
