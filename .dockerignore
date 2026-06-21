@@ -1,0 +1,9 @@
+node_modules
+.wwebjs_auth
+.wwebjs_cache
+.git
+.gitignore
+*.log
+.DS_Store
+.env
+nixpacks.toml
