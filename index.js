@@ -2,6 +2,8 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
@@ -61,6 +63,35 @@ client.on('message', async (msg) => {
         console.error('Error:', error.message);
     }
 });
+
+// Elimina los candados de Chromium (Singleton*) que pueden quedar dentro de la
+// carpeta de sesión tras un apagado abrupto y que impiden relanzar el browser
+// con el error "profile appears to be in use" (Code: 21).
+function limpiarCandadosChromium(dir) {
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+        // La carpeta aún no existe (primer arranque) u otro error de lectura: no es fatal.
+        return;
+    }
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            limpiarCandadosChromium(fullPath);
+        } else if (entry.name.startsWith('Singleton')) {
+            try {
+                fs.rmSync(fullPath, { force: true });
+                console.log(`🧹 Candado de Chromium eliminado: ${fullPath}`);
+            } catch (err) {
+                console.error(`No se pudo eliminar el candado ${fullPath}:`, err.message);
+            }
+        }
+    }
+}
+
+// Limpia candados antes de arrancar el cliente (clave en Railway tras reinicios).
+limpiarCandadosChromium(process.env.SESSION_PATH || './.wwebjs_auth');
 
 client.initialize();
 
