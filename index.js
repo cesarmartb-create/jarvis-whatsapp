@@ -29,14 +29,21 @@ client.on('ready', () => {
     console.log('✅ JARVIS conectado a WhatsApp exitosamente!');
 });
 
+// Número de César (sin + ni @c.us) para identificar mensajes del jefe
+const CESAR_NUMBER = '56993434939';
+const OWNER_NOTE = 'IMPORTANTE: Este mensaje es de César directamente. Trátalo como tu jefe, no como un contacto externo.';
+
 client.on('message', async (msg) => {
     if (msg.fromMe) return;
-    console.log(`📨 Mensaje de ${msg.from}: ${msg.body}`);
+    const isOwner = msg.from.includes(CESAR_NUMBER);
+    console.log(`📨 Mensaje de ${msg.from}${isOwner ? ' (César/jefe)' : ''}: ${msg.body}`);
     try {
         const response = await axios.post(N8N_WEBHOOK, {
             message: msg.body,
             from: msg.from,
-            timestamp: msg.timestamp
+            timestamp: msg.timestamp,
+            isOwner,
+            ownerNote: isOwner ? OWNER_NOTE : ''
         });
         console.log('Respuesta n8n:', JSON.stringify(response.data));
         let reply = 'Mensaje recibido.';
