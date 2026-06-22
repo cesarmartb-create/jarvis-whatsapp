@@ -22,6 +22,9 @@ const client = new Client({
     }
 });
 
+// Indica si WhatsApp ya terminó de conectar; lo usa el endpoint /send.
+let clientReady = false;
+
 client.on('qr', (qr) => {
     console.log('📱 Escanea este QR con WhatsApp Business:');
     qrcode.generate(qr, { small: true });
@@ -30,7 +33,13 @@ client.on('qr', (qr) => {
 });
 
 client.on('ready', () => {
+    clientReady = true;
     console.log('✅ JARVIS conectado a WhatsApp exitosamente!');
+});
+
+client.on('disconnected', (reason) => {
+    clientReady = false;
+    console.log('⚠️ WhatsApp desconectado:', reason);
 });
 
 // Número de César (sin + ni @c.us) para identificar mensajes del jefe
@@ -96,5 +105,24 @@ limpiarCandadosChromium(process.env.SESSION_PATH || './.wwebjs_auth');
 client.initialize();
 
 app.get('/health', (req, res) => res.json({ status: 'JARVIS online' }));
+
+// Permite a n8n enviar mensajes de WhatsApp: POST /send { to, message }
+app.post('/send', async (req, res) => {
+    const { to, message } = req.body || {};
+    if (!to || !message) {
+        return res.status(400).json({ success: false, error: 'Faltan los campos "to" o "message".' });
+    }
+    if (!clientReady) {
+        return res.status(503).json({ success: false, error: 'El cliente de WhatsApp no está listo todavía.' });
+    }
+    try {
+        await client.sendMessage(to, message);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error al enviar mensaje:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 JARVIS corriendo en puerto ${PORT}`));
