@@ -48,7 +48,39 @@ const OWNER_NOTE = 'IMPORTANTE: Este mensaje es de César directamente. Trátalo
 
 client.on('message', async (msg) => {
     if (msg.fromMe) return;
-    const isOwner = msg.from.includes(CESAR_NUMBER);
+
+    // El número real puede llegar en distintos campos según si WhatsApp usa
+    // formato estándar (@c.us) o LID (@lid, que NO contiene el número real).
+    // getContact() suele resolver el número real incluso cuando from es @lid.
+    let contactNumber = '';
+    try {
+        const contact = await msg.getContact();
+        contactNumber = contact?.number || contact?.id?.user || '';
+    } catch (err) {
+        console.error('No se pudo obtener el contacto:', err.message);
+    }
+
+    // 🔎 Log de diagnóstico: muestra en qué campo llega el número real de César.
+    console.log('🔎 Campos del mensaje:', JSON.stringify({
+        from: msg.from,
+        author: msg.author,
+        dataFrom: msg._data?.from,
+        dataAuthor: msg._data?.author,
+        notifyName: msg._data?.notifyName,
+        contactNumber
+    }));
+
+    // Es César si CUALQUIER campo disponible contiene su número real.
+    const candidatos = [
+        msg.from,
+        msg.author,
+        msg._data?.from,
+        msg._data?.author,
+        msg._data?.notifyName,
+        contactNumber
+    ];
+    const isOwner = candidatos.some((c) => typeof c === 'string' && c.includes(CESAR_NUMBER));
+
     console.log(`📨 Mensaje de ${msg.from}${isOwner ? ' (César/jefe)' : ''}: ${msg.body}`);
     try {
         const response = await axios.post(N8N_WEBHOOK, {
