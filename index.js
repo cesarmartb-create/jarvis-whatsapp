@@ -43,7 +43,8 @@ client.on('disconnected', (reason) => {
 });
 
 // Número de César (sin + ni @c.us) para identificar mensajes del jefe
-const CESAR_NUMBER = '56993434939';
+const CESAR_NUMBER = "56993434939";
+const CESAR_LID = "39015550038039";
 const OWNER_NOTE = 'IMPORTANTE: Este mensaje es de César directamente. Trátalo como tu jefe, no como un contacto externo.';
 
 client.on('message', async (msg) => {
@@ -79,7 +80,7 @@ client.on('message', async (msg) => {
         msg._data?.notifyName,
         contactNumber
     ];
-    const isOwner = candidatos.some((c) => typeof c === 'string' && c.includes(CESAR_NUMBER));
+    const isOwner = candidatos.some((c) => typeof c === "string" && (c.includes(CESAR_NUMBER) || c.includes(CESAR_LID)));
 
     console.log(`📨 Mensaje de ${msg.from}${isOwner ? ' (César/jefe)' : ''}: ${msg.body}`);
     try {
