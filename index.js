@@ -140,7 +140,12 @@ client.initialize();
 app.get('/health', (req, res) => res.json({ status: 'JARVIS online' }));
 
 // Permite a n8n enviar mensajes de WhatsApp: POST /send { to, message }
-app.post('/send', async (req, res) => {
+app.post("/send", async (req, res) => {
+    // Verificacion de seguridad: solo quien tenga la llave correcta puede usar /send
+    const token = req.headers["x-api-key"];
+    if (!process.env.SEND_TOKEN || token !== process.env.SEND_TOKEN) {
+        return res.status(401).json({ success: false, error: "No autorizado." });
+    }
     const { to, message } = req.body || {};
     if (!to || !message) {
         return res.status(400).json({ success: false, error: 'Faltan los campos "to" o "message".' });
