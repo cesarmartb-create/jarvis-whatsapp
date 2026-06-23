@@ -1,6 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
+const FormData = require('form-data');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -47,8 +48,45 @@ const CESAR_NUMBER = "56993434939";
 const CESAR_LID = "39015550038039";
 const OWNER_NOTE = 'IMPORTANTE: Este mensaje es de César directamente. Trátalo como tu jefe, no como un contacto externo.';
 
+// Transcribe una nota de voz usando OpenAI Whisper.
+// Recibe el audio en base64 y devuelve el texto en español.
+async function transcribirAudio(base64Data, mimetype) {
+    const audioBuffer = Buffer.from(base64Data, 'base64');
+    const extension = (mimetype && mimetype.includes('mp4')) ? 'mp4' : 'ogg';
+    const form = new FormData();
+    form.append('file', audioBuffer, { filename: `audio.${extension}`, contentType: mimetype || 'audio/ogg' });
+    form.append('model', 'whisper-1');
+    form.append('language', 'es');
+    const resp = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+        headers: {
+            ...form.getHeaders(),
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+    });
+    return resp.data.text;
+}
+
 client.on('message', async (msg) => {
     if (msg.fromMe) return;
+
+    // Determina el texto del mensaje. Si es una nota de voz (ptt) o audio,
+    // lo descarga y lo transcribe con Whisper. Si es texto, usa msg.body.
+    let textoMensaje = msg.body;
+    if (msg.hasMedia && (msg.type === 'ptt' || msg.type === 'audio')) {
+        try {
+            console.log('🎤 Nota de voz recibida, transcribiendo...');
+            const media = await msg.downloadMedia();
+            textoMensaje = await transcribirAudio(media.data, media.mimetype);
+            console.log('📝 Transcripción:', textoMensaje);
+        } catch (err) {
+            console.error('Error al transcribir audio:', err.message);
+            await msg.reply('No pude entender la nota de voz, ¿me la puedes escribir?');
+            return;
+        }
+    }
+
 
     // El número real puede llegar en distintos campos según si WhatsApp usa
     // formato estándar (@c.us) o LID (@lid, que NO contiene el número real).
@@ -82,10 +120,10 @@ client.on('message', async (msg) => {
     ];
     const isOwner = candidatos.some((c) => typeof c === "string" && (c.includes(CESAR_NUMBER) || c.includes(CESAR_LID)));
 
-    console.log(`📨 Mensaje de ${msg.from}${isOwner ? ' (César/jefe)' : ''}: ${msg.body}`);
+    console.log(`📨 Mensaje de ${msg.from}${isOwner ? " (César/jefe)" : ""}: ${textoMensaje}`);
     try {
         const response = await axios.post(N8N_WEBHOOK, {
-            message: msg.body,
+            message: textoMensaje,
             from: msg.from,
             timestamp: msg.timestamp,
             isOwner,
