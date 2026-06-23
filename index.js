@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 const FormData = require('form-data');
@@ -68,18 +68,38 @@ async function transcribirAudio(base64Data, mimetype) {
     return resp.data.text;
 }
 
+// Genera una nota de voz a partir de texto usando ElevenLabs (text-to-speech).
+// Devuelve el audio MP3 codificado en base64.
+async function generarVoz(texto) {
+    const voiceId = process.env.ELEVENLABS_VOICE_ID;
+    const resp = await axios.post(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        { text: texto, model_id: 'eleven_multilingual_v2' },
+        {
+            headers: {
+                'xi-api-key': process.env.ELEVENLABS_API_KEY,
+                'Content-Type': 'application/json'
+            },
+            responseType: 'arraybuffer'
+        }
+    );
+    return Buffer.from(resp.data).toString('base64');
+}
+
 client.on('message', async (msg) => {
     if (msg.fromMe) return;
 
     // Determina el texto del mensaje. Si es una nota de voz (ptt) o audio,
     // lo descarga y lo transcribe con Whisper. Si es texto, usa msg.body.
     let textoMensaje = msg.body;
+    let entroPorVoz = false;
     if (msg.hasMedia && (msg.type === 'ptt' || msg.type === 'audio')) {
         try {
             console.log('🎤 Nota de voz recibida, transcribiendo...');
             const media = await msg.downloadMedia();
             textoMensaje = await transcribirAudio(media.data, media.mimetype);
             console.log('📝 Transcripción:', textoMensaje);
+            entroPorVoz = true;
         } catch (err) {
             console.error('Error al transcribir audio:', err.message);
             await msg.reply('No pude entender la nota de voz, ¿me la puedes escribir?');
@@ -138,7 +158,20 @@ client.on('message', async (msg) => {
         } else if (typeof response.data === 'string') {
             reply = response.data;
         }
-        await msg.reply(reply);
+        if (isOwner && entroPorVoz) {
+            try {
+                console.log('🔊 César escribió por voz: respondo con nota de voz (ElevenLabs)...');
+                const audioBase64 = await generarVoz(reply);
+                const media = new MessageMedia('audio/mpeg', audioBase64, 'voz.mp3');
+                await client.sendMessage(msg.from, media, { sendAudioAsVoice: true });
+                console.log('🔊 Nota de voz enviada correctamente.');
+            } catch (err) {
+                console.error('🔊 Falló la generación de voz, respondo con texto:', err.message);
+                await msg.reply(reply);
+            }
+        } else {
+            await msg.reply(reply);
+        }
     } catch (error) {
         console.error('Error:', error.message);
     }
