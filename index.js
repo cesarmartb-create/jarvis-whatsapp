@@ -158,13 +158,30 @@ client.on('message', async (msg) => {
         } else if (typeof response.data === 'string') {
             reply = response.data;
         }
+        const LIMITE_VOZ = 600;
         if (isOwner && entroPorVoz) {
             try {
+                // Recorta respuestas largas para no gastar créditos de ElevenLabs de más.
+                let textoParaVoz = reply;
+                if (reply.length > LIMITE_VOZ) {
+                    const ventana = reply.slice(0, LIMITE_VOZ);
+                    const finFrase = Math.max(
+                        ventana.lastIndexOf('.'),
+                        ventana.lastIndexOf('!'),
+                        ventana.lastIndexOf('?')
+                    );
+                    textoParaVoz = finFrase !== -1 ? reply.slice(0, finFrase + 1) : reply.slice(0, LIMITE_VOZ);
+                    console.log(`✂️ Texto recortado para voz: ${reply.length} → ${textoParaVoz.length} caracteres.`);
+                }
                 console.log('🔊 César escribió por voz: respondo con nota de voz (ElevenLabs)...');
-                const audioBase64 = await generarVoz(reply);
+                const audioBase64 = await generarVoz(textoParaVoz);
                 const media = new MessageMedia('audio/mpeg', audioBase64, 'voz.mp3');
                 await client.sendMessage(msg.from, media, { sendAudioAsVoice: true });
                 console.log('🔊 Nota de voz enviada correctamente.');
+                // Si la respuesta era larga, manda el texto completo aparte para no perder detalle.
+                if (reply.length > LIMITE_VOZ) {
+                    await msg.reply(reply);
+                }
             } catch (err) {
                 console.error('🔊 Falló la generación de voz, respondo con texto:', err.message);
                 await msg.reply(reply);
