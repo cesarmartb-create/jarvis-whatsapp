@@ -225,7 +225,15 @@ limpiarCandadosChromium(process.env.SESSION_PATH || './.wwebjs_auth');
 
 client.initialize();
 
-app.get('/health', (req, res) => res.json({ status: 'JARVIS online' }));
+app.get('/health', (req, res) => {
+    const payload = {
+        status: clientReady ? 'ok' : 'error',
+        whatsapp: clientReady ? 'ready' : 'not_ready',
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString()
+    };
+    res.status(clientReady ? 200 : 503).json(payload);
+});
 
 // Permite a n8n enviar mensajes de WhatsApp: POST /send { to, message }
 app.post("/send", async (req, res) => {
