@@ -159,7 +159,9 @@ client.on('message', async (msg) => {
             reply = response.data;
         }
         const LIMITE_VOZ = 600;
-        if (isOwner && entroPorVoz) {
+        // Voz de salida detras de un flag: solo genera audio si VOICE_REPLIES === 'true'.
+        const vozSalidaActiva = process.env.VOICE_REPLIES === 'true';
+        if (isOwner && entroPorVoz && vozSalidaActiva) {
             try {
                 // Recorta respuestas largas para no gastar créditos de ElevenLabs de más.
                 let textoParaVoz = reply;
@@ -187,6 +189,9 @@ client.on('message', async (msg) => {
                 await msg.reply(reply);
             }
         } else {
+            if (isOwner && entroPorVoz) {
+                console.log('🔇 Voz de salida desactivada: respondo en texto');
+            }
             await msg.reply(reply);
         }
     } catch (error) {
