@@ -265,3 +265,91 @@ app.post("/send", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 JARVIS corriendo en puerto ${PORT}`));
+
+// ============================================================
+// SELF-HEALING: vigila n8n y lo reinicia vía API de Railway
+// si su readiness falla varias veces seguidas.
+// Todo detrás del flag SELF_HEAL (default OFF).
+// ============================================================
+const N8N_READINESS_URL = 'https://n8n-production-fe7d.up.railway.app/healthz/readiness';
+const RAILWAY_API = 'https://backboard.railway.app/graphql/v2';
+const SELFHEAL_INTERVAL_MS = 2 * 60 * 1000;   // chequea cada 2 min
+const SELFHEAL_MAX_FAILS = 3;                 // reinicia tras 3 fallos seguidos
+const SELFHEAL_COOLDOWN_MS = 5 * 60 * 1000;   // pausa 5 min tras reiniciar
+
+let selfHealFails = 0;
+let selfHealCooldownUntil = 0;
+
+// Dispara el reinicio de n8n usando serviceInstanceRedeploy.
+async function reiniciarN8n() {
+    const token = process.env.RAILWAY_API_TOKEN;
+    const serviceId = process.env.RAILWAY_N8N_SERVICE_ID;
+    const environmentId = process.env.RAILWAY_ENVIRONMENT_ID;
+    if (!token || !serviceId || !environmentId) {
+        console.error('🩺 Self-heal: faltan RAILWAY_API_TOKEN / RAILWAY_N8N_SERVICE_ID / RAILWAY_ENVIRONMENT_ID. No reinicio.');
+        return false;
+    }
+    const query = `mutation serviceInstanceRedeploy($serviceId: String!, $environmentId: String!) { serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId) }`;
+    try {
+        const resp = await axios.post(
+            RAILWAY_API,
+            { query, variables: { serviceId, environmentId } },
+            { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+        );
+        if (resp.data && resp.data.errors) {
+            console.error('🩺 Self-heal: la API de Railway devolvió errores:', JSON.stringify(resp.data.errors));
+            return false;
+        }
+        console.log('🩺 Self-heal: reinicio de n8n solicitado a Railway correctamente.');
+        return true;
+    } catch (err) {
+        console.error('🩺 Self-heal: error llamando a la API de Railway:', err.message);
+        return false;
+    }
+}
+
+// Chequea el readiness de n8n y decide si reiniciar.
+async function vigilarN8n() {
+    if (process.env.SELF_HEAL !== 'true') return;          // apagado por flag
+    if (Date.now() < selfHealCooldownUntil) return;        // en cooldown post-reinicio
+
+    let sano = false;
+    try {
+        const resp = await axios.get(N8N_READINESS_URL, { timeout: 10000 });
+        sano = resp.status === 200 && resp.data && resp.data.status === 'ok';
+    } catch (err) {
+        sano = false;
+    }
+
+    if (sano) {
+        if (selfHealFails > 0) console.log('🩺 Self-heal: n8n volvió a responder OK, contador reseteado.');
+        selfHealFails = 0;
+        return;
+    }
+
+    selfHealFails++;
+    console.log(`🩺 Self-heal: n8n no responde (fallo ${selfHealFails}/${SELFHEAL_MAX_FAILS}).`);
+    if (selfHealFails >= SELFHEAL_MAX_FAILS) {
+        console.log('🩺 Self-heal: umbral alcanzado, reiniciando n8n...');
+        const ok = await reiniciarN8n();
+        selfHealFails = 0;
+        if (ok) {
+            selfHealCooldownUntil = Date.now() + SELFHEAL_COOLDOWN_MS;
+            console.log(`🩺 Self-heal: en cooldown ${SELFHEAL_COOLDOWN_MS / 60000} min mientras n8n arranca.`);
+        }
+    }
+}
+
+setInterval(vigilarN8n, SELFHEAL_INTERVAL_MS);
+console.log('🩺 Self-heal: vigilancia de n8n iniciada (activa solo si SELF_HEAL=true).');
+
+// Endpoint manual para probar el reinicio a demanda (protegido con SEND_TOKEN).
+app.post('/selfheal-test', async (req, res) => {
+    const token = req.headers['x-api-key'];
+    if (!process.env.SEND_TOKEN || token !== process.env.SEND_TOKEN) {
+        return res.status(401).json({ success: false, error: 'No autorizado.' });
+    }
+    console.log('🩺 Self-heal: reinicio manual solicitado vía /selfheal-test.');
+    const ok = await reiniciarN8n();
+    res.status(ok ? 200 : 500).json({ success: ok });
+});
